@@ -67,11 +67,12 @@ enum class MineWorkerResult {
 };
 
 MineWorkerResult mine_worker(SHA_CTX const &prefix_ctx, unsigned char nonce[64], size_t *nonce_len, unsigned char hash[20], size_t difficulty) {
+    SHA_CTX ctx;
     for (size_t i = 0; i < 9999999; ++i) {
         if (!nonce_inc(nonce, 64, nonce_len)) {
             return MineWorkerResult::FINISHED;
         }
-        SHA_CTX ctx = prefix_ctx;
+        memcpy(&ctx, &prefix_ctx, sizeof(ctx));
         SHA1_Update(&ctx, nonce, *nonce_len);
         SHA1_Final(hash, &ctx);
         if (difficulty_eq(hash, difficulty)) {
@@ -88,49 +89,70 @@ struct MineResult {
     unsigned char hash[20] = {};
 };
 
-void miner_thread() {
+std::atomic<int> result_id = -1;
+std::mutex m;
+std::condition_variable thread_exit;;
 
+void miner_thread(SHA_CTX const &prefix_ctx, MineResult &result, size_t difficulty, int id) {
+    size_t nonce_len;
+    MineWorkerResult r = MineWorkerResult::NOTFOUND;
+    while(result_id == -1 && r == MineWorkerResult::NOTFOUND) {
+        r = mine_worker(prefix_ctx, result.nonce, &nonce_len, result.hash, difficulty);
+    }
+    if (r == MineWorkerResult::FOUND) {
+        result_id = id;
+        result.success = true;
+        thread_exit.notify_one();
+    }
 }
 
-MineResult mine(std::string const &prefix, size_t difficulty) {
+MineResult mine(std::string const &prefix, size_t difficulty, size_t threads_count) {
     MineResult result;
-    result.success = true;
+    result.success = false;
 
     SHA_CTX ctx;
     SHA1_Init(&ctx);
     SHA1_Update(&ctx, prefix.c_str(), prefix.size());
-    unsigned char hash[20] = {0};
 
-    if (difficulty_eq(ctx, hash, difficulty)) {
+    if (difficulty_eq(ctx, result.hash, difficulty)) {
+        result.success = true;
         return result;
     }
 
-    unsigned char padding_str[64] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
-    size_t padding = 64 - prefix.size() % 64;
-    SHA1_Update(&ctx, padding_str, padding);
-    memcpy(result.padding, padding_str, padding);
+    unsigned char padding_alphabet[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 
-    if (difficulty_eq(ctx, hash, difficulty)) {
-        memcpy(result.hash, hash, sizeof(hash));
-        return result;
+    assert(threads_count < sizeof(padding_alphabet));
+
+    std::vector<MineResult> results(threads_count, result);
+    std::vector<SHA_CTX> ctxs(threads_count, ctx);
+
+    const size_t padding_size = 64 - prefix.size() % 64;
+    for (size_t i = 0; i < threads_count; ++i) {
+        memset(results[i].padding, padding_alphabet[i], padding_size);
+        SHA1_Update(&ctxs[i], results[i].padding, padding_size);
+        if (difficulty_eq(ctxs[i], results[i].hash, difficulty)) {
+            return results[i];
+        }
     }
 
-    unsigned char nonce[64] = {0};
-    size_t nonce_len = 0;
+    std::vector<std::thread> threads;
 
-    MineWorkerResult r = MineWorkerResult::NOTFOUND;
-
-    while(r == MineWorkerResult::NOTFOUND) {
-        r = mine_worker(ctx, nonce, &nonce_len, hash, difficulty);
+    for (size_t i = 0; i < threads_count; ++i) {
+        threads.emplace_back(std::thread([&ctxs, i, &results, difficulty] {
+                                             miner_thread(ctxs[i], results[i], difficulty, i);
+                                         }));
     }
 
-    if (r == MineWorkerResult::FOUND) {
-        memcpy(result.nonce, nonce, sizeof(nonce));
-        memcpy(result.hash, hash, sizeof(hash));
-        return result;
+    std::unique_lock<std::mutex> lock(m);
+    thread_exit.wait(lock);
+
+    for (auto &t : threads) {
+        t.join();
     }
 
-    result.success = false;
+    if (result_id != -1) {
+        return results[result_id];
+    }
     return result;
 }
 
@@ -138,13 +160,9 @@ std::string to_string(unsigned char const data[64]) {
     return std::string((char const*)data, 64);
 }
 
-struct Foo {
-    char bar[10] = {0};
-};
-
 int main() {
     std::string const prefix = "hello world";
-    const auto r = mine(prefix, 7);
+    const auto r = mine(prefix, 9, 2);
     if (!r.success) {
         std::cerr << "Hash not found" << std::endl;
         return 1;
