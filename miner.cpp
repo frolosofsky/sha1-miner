@@ -1,9 +1,12 @@
 #include "miner.h"
-#include <openssl/sha.h>
 #include <thread>
 #include <vector>
+#include "sha1.h"
 
-static bool difficulty_eq(unsigned char const *buf, size_t d) {
+#include <iostream>
+
+static bool difficulty_eq(sha1::hash const &hash, size_t d) {
+    unsigned char const *buf = hash.data();
     while (d > 1) {
         if (*buf == 0) {
             d -= 2;
@@ -18,16 +21,18 @@ static bool difficulty_eq(unsigned char const *buf, size_t d) {
     return true;
 }
 
-static bool difficulty_eq(SHA_CTX const &ctx, unsigned char hash[20], size_t const difficulty) {
-    SHA_CTX tmp = ctx;
-    SHA1_Final(hash, &tmp);
+static bool difficulty_eq(sha1 const &sha, sha1::hash &hash, size_t const difficulty) {
+    sha1 tmp = sha;
+    tmp.finalize(hash);
     return difficulty_eq(hash, difficulty);
 }
 
 constexpr size_t npos = size_t(-1);
 
+using nonce = sha1::buf<nonce_size>;
+
 // Nonce alphabet is [0-9a-zA-Z]
-static size_t nonce_inc(unsigned char nonce[nonce_size], size_t const i=(nonce_size - 1)) {
+static size_t nonce_inc(nonce &nonce, size_t const i=(nonce_size - 1)) {
     if (nonce[i] == '9') {
         nonce[i] = 'a';
         return i;
@@ -51,18 +56,15 @@ enum class MineWorkerResult {
     FINISHED,
 };
 
-static MineWorkerResult mine_worker(SHA_CTX const &prefix_ctx,
-                                    unsigned char nonce[nonce_size],
-                                    unsigned char hash[20],
-                                    size_t const difficulty) {
+static MineWorkerResult mine_worker(sha1 const &prefix_sha, nonce &nonce, sha1::hash &hash, size_t const difficulty) {
     for (size_t i = 0; i < 9999999; ++i) {
         size_t const changed_index = nonce_inc(nonce);
         if (changed_index == npos) {
             return MineWorkerResult::FINISHED;
         }
-        SHA_CTX ctx = prefix_ctx;
-        SHA1_Update(&ctx, nonce, nonce_size);
-        SHA1_Final(hash, &ctx);
+        sha1 sha = prefix_sha;
+        sha.update(nonce);
+        sha.finalize(hash);
         if (difficulty_eq(hash, difficulty)) {
             return MineWorkerResult::FOUND;
         }
@@ -74,28 +76,28 @@ MineResult mine(std::string const &prefix, size_t const difficulty, size_t const
     MineResult result;
     result.success = false;
 
-    SHA_CTX ctx;
-    SHA1_Init(&ctx);
-    SHA1_Update(&ctx, prefix.c_str(), prefix.size());
+    sha1 sha;
+    sha.update(prefix);
 
-    if (difficulty_eq(ctx, result.hash, difficulty)) {
-        result.success = true;
-        return result;
+    if (difficulty_eq(sha, result.hash, difficulty)) {
+        return result.ok();
     }
 
     constexpr unsigned char padding_alphabet[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
     assert(threads_count < sizeof(padding_alphabet));
 
+    // per thread results
     std::vector<MineResult> results(threads_count, result);
-    std::vector<SHA_CTX> ctxs(threads_count, ctx);
+    // per thread prefix sha1 (they have different paddings)
+    std::vector<sha1> ctxs(threads_count, sha);
 
     size_t const padding_size = 64 - prefix.size() % 64;
     for (size_t i = 0; i < threads_count; ++i) {
-        memset(results[i].padding, padding_alphabet[i], padding_size);
-        memset(results[i].nonce, '0', nonce_size);
-        SHA1_Update(&ctxs[i], results[i].padding, padding_size);
+        memset(results[i].padding.data(), padding_alphabet[i], padding_size);
+        results[i].nonce.fill('0');
+        ctxs[i].update(results[i].padding, padding_size);
         if (difficulty_eq(ctxs[i], results[i].hash, difficulty)) {
-            return results[i];
+            return results[i].ok();
         }
     }
 
@@ -113,7 +115,7 @@ MineResult mine(std::string const &prefix, size_t const difficulty, size_t const
                                              }
                                              if (r == MineWorkerResult::FOUND) {
                                                  result_id = i;
-                                                 results[i].success = true;
+                                                 results[i].ok();
                                              }
                                              --active_threads;
                                              thread_exit.notify_one();
@@ -133,13 +135,13 @@ MineResult mine(std::string const &prefix, size_t const difficulty, size_t const
     if (result_id != -1) {
         return results[result_id];
     }
-    return result;
+    return result; // success=false
 }
 
-std::string hash2str(unsigned char const hash[20]) {
+std::string hash2str(sha1::hash const &hash) {
     constexpr char digits[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
-    std::string str(40, ' ');
-    for (size_t i = 0; i < 20; ++i) {
+    std::string str(hash.size() * 2, ' ');
+    for (size_t i = 0; i < hash.size(); ++i) {
         str[i*2] = digits[(hash[i] & 0xFA) >> 4];
         str[i*2 + 1] = digits[hash[i] & 0x0F];
     }

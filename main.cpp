@@ -1,9 +1,10 @@
 #include <iostream>
 #include "miner.h"
+#include "sha1.h"
 
 template<size_t N>
-std::string to_string(unsigned char const data[N]) {
-    return std::string((char const*)data, N);
+std::string to_string(sha1::buf<N> const &data) {
+    return std::string((char const*)data.data(), data.size());
 }
 
 int main() {
