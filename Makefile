@@ -1,11 +1,13 @@
-LDFLAGS="-L/usr/local/opt/openssl/lib"
-CPPFLAGS="-I/usr/local/opt/openssl/include"
+SSL_LD=-L/usr/local/opt/openssl/lib -lssl -l crypto
+SSL_I=-I/usr/local/opt/openssl/include
 
-.PHONY: profile
+CPPFLAGS=-std=c++17 -Wextra -Werror -pedantic -O2 ${SSL_I}
+LDFLAGS=${SSL_LD}
 
-exasol-test: main.cpp miner.h miner.cpp
-	/usr/bin/clang++ ${CPPFLAGS} ${LDFLAGS} -std=c++17 -Wextra -Werror -pedantic -lssl -lcrypto main.cpp miner.cpp -o exasol-test -O2
+.PHONY: clean
 
-profile: exasol-test
-	sudo dtrace -c './exasol-test' -o out.stacks -n 'profile-997 /execname == "exasol-test"/ { @[ustack(100)] = count(); }'
-	../FlameGraph/stackcollapse.pl out.stacks | ../FlameGraph/flamegraph.pl > pretty-graph.svg
+sha1-miner: main.cpp miner.h miner.cpp sha1.h
+	/usr/bin/clang++ ${CPPFLAGS} ${LDFLAGS} main.cpp miner.cpp -o $@
+
+clean:
+	rm -f sha1-miner
