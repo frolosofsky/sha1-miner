@@ -9,6 +9,3 @@ exasol-test: main.cpp miner.h miner.cpp
 profile: exasol-test
 	sudo dtrace -c './exasol-test' -o out.stacks -n 'profile-997 /execname == "exasol-test"/ { @[ustack(100)] = count(); }'
 	../FlameGraph/stackcollapse.pl out.stacks | ../FlameGraph/flamegraph.pl > pretty-graph.svg
-
-run: exasol-test
-	time ./exasol-test
