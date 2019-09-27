@@ -11,14 +11,40 @@ Miner finds a nonce for a given prefix and difficulty by using multithread brute
 3. run `make`.
 
 ## Use
+
+`./sha1-miner some-prefix -d 5 -t 2`
+
+Runs miner in two threads to find a hash with difficulty 5.
+
+Run `./sha1-miner -h` for info.
+
+## Examples
+
+### Use sequential nonce search
+
 ```
-Usage: ./sha1-miner <prefix> [-t <threads_count>] [-d <difficulty>] [-h]
-Find a suffix so that sha1(<prefix><suffix>) has <difficulty>
-  -d <difficulty>      an amount of leading zeros in the hex view
-                       of the hash (i.e. every difficulty point represents
-                       a 4 bits of the hash, max difficulty is 40).
-  -t <threads_count>   how many threads to launch to mine a hash.
+./sha1-miner "hello world" -d 7 -t 2 -p
+make: `sha1-miner' is up to date.
+hello world0000000000000000000000000000000000000000000000000000000000000000efyMs
+0000000fc220ad3cfd3647556e8ed3657173a9ad
+Hashrate is 14.258M/s
 ```
 
+### Use random nonce generation
+
+```
+./sha1-miner "hello world" -d 7 -t 2 -p -r
+/usr/bin/clang++ -std=c++17 -Wextra -Werror -pedantic -O2 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lssl -l crypto main.cpp miner.cpp -o sha1-miner
+hello world11111111111111111111111111111111111111111111111111111QRpEZPSu9Ks0iSpB
+00000005ddb4dba209de9c7ed7f27d411f1119b8
+Hashrate is 6.04797M/s
+```
+
+### Notes
+Performace measurement (`-p`) costs CPU itself due to using atomic integer counter.
+In my tests, overal performace loss is about 15%.
+
 ## TODO
-To progress when the first-round nonce counting doesn't give a result.
+
+* To progress when the first-round nonce counting doesn't give a result.
+* Rework performace measurement (use independent counters per thread).
