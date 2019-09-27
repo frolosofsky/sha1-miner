@@ -2,8 +2,11 @@
 
 Miner finds a nonce for a given prefix and difficulty by using multithread brute force algorithm.
 
-1. Cache SHA1 for prefix + padding to 512 bits.
-2. Increments a nonce of characters from `0-9a-zA-Z` alphabet until hash found.
+### Top level algorithm
+1. Calculate SHA1 for the prefix and padding to 512 bits. This step optimizes further hash generation
+because sha1 won't rehash the prefix when it's padded correctly.
+2. Increment or randomize nonce on the every next step and continue until hash with a given difficulty
+not found.
 
 ## Build
 1. Install `openssl` binaries and headers, `make`, and C++17 compiler;
@@ -25,6 +28,7 @@ Run `./sha1-miner -h` for info.
 #### One thread
 
 ```
+./sha1-miner "hello world" -d 7 -t 1 -p
 hello world0000000000000000000000000000000000000000000000000000000000000000efyMs
 0000000fc220ad3cfd3647556e8ed3657173a9ad
 Hashrate is 9.43239M/s
