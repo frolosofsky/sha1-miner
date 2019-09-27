@@ -68,9 +68,10 @@ enum class MineWorkerResult {
     FINISHED,
 };
 
-static MineWorkerResult mine_worker(sha1 const &prefix_sha, nonce &nonce, sha1::hash &hash, size_t const difficulty, size_t nonce_func(::nonce&)) {
+static MineWorkerResult mine_worker(sha1 const &prefix_sha, nonce &nonce, sha1::hash &hash, size_t const difficulty, size_t nonce_func(::nonce&), size_t &counter) {
     for (size_t i = 0; i < 9999999; ++i) {
         size_t const changed_index = nonce_func(nonce);
+        ++counter;
         if (changed_index == npos) {
             return MineWorkerResult::FINISHED;
         }
@@ -84,7 +85,7 @@ static MineWorkerResult mine_worker(sha1 const &prefix_sha, nonce &nonce, sha1::
     return MineWorkerResult::NOTFOUND;
 }
 
-MineResult mine(std::string const &prefix, size_t const difficulty, size_t const threads_count, size_t nonce_func(nonce&)) {
+MineResult mine(std::string const &prefix, size_t const difficulty, size_t const threads_count, size_t nonce_func(nonce&), size_t *counter) {
     MineResult result;
     result.success = false;
 
@@ -123,7 +124,7 @@ MineResult mine(std::string const &prefix, size_t const difficulty, size_t const
         threads.emplace_back(std::thread([&ctxs, i, &results, difficulty, &result_id, &active_threads, &thread_exit, &nonce_func] {
                                              MineWorkerResult r = MineWorkerResult::NOTFOUND;
                                              while(result_id == -1 && r == MineWorkerResult::NOTFOUND) {
-                                                 r = mine_worker(ctxs[i], results[i].nonce, results[i].hash, difficulty, nonce_func);
+                                                 r = mine_worker(ctxs[i], results[i].nonce, results[i].hash, difficulty, nonce_func, results[i].hashes_count);
                                              }
                                              if (r == MineWorkerResult::FOUND) {
                                                  result_id = i;
@@ -142,6 +143,13 @@ MineResult mine(std::string const &prefix, size_t const difficulty, size_t const
     // at this moment at least one thread is finished, and others have been notified to stop.
     for (auto &t : threads) {
         t.join();
+    }
+
+    if (counter != nullptr) {
+        *counter = 0;
+        for (auto const &r : results) {
+            *counter += r.hashes_count;
+        }
     }
 
     if (result_id != -1) {

@@ -22,29 +22,33 @@ Run `./sha1-miner -h` for info.
 
 ### Use sequential nonce search
 
+#### One thread
+
 ```
-./sha1-miner "hello world" -d 7 -t 2 -p
-make: `sha1-miner' is up to date.
 hello world0000000000000000000000000000000000000000000000000000000000000000efyMs
 0000000fc220ad3cfd3647556e8ed3657173a9ad
-Hashrate is 14.258M/s
+Hashrate is 9.43239M/s
+```
+
+#### Two threads
+
+```
+./sha1-miner "hello world" -d 7 -t 2 -p
+hello world0000000000000000000000000000000000000000000000000000000000000000efyMs
+0000000fc220ad3cfd3647556e8ed3657173a9ad
+Hashrate is 17.5783M/s
 ```
 
 ### Use random nonce generation
 
 ```
 ./sha1-miner "hello world" -d 7 -t 2 -p -r
-/usr/bin/clang++ -std=c++17 -Wextra -Werror -pedantic -O2 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lssl -l crypto main.cpp miner.cpp -o sha1-miner
-hello world11111111111111111111111111111111111111111111111111111QRpEZPSu9Ks0iSpB
-00000005ddb4dba209de9c7ed7f27d411f1119b8
-Hashrate is 6.04797M/s
+hello world000000000000000000000000000000000000000000000000000009ItwHhN0Am0VC3NH
+0000000367e43c366b7431f25f0ff860b939607b
+Hashrate is 8.02728M/s
 ```
-
-### Notes
-Performace measurement (`-p`) costs CPU itself due to using atomic integer counter.
-In my tests, overal performace loss is about 15%.
 
 ## TODO
 
 * To progress when the first-round nonce counting doesn't give a result.
-* Rework performace measurement (use independent counters per thread).
+* Uptimize random suffix generation.
