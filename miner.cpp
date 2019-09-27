@@ -1,9 +1,7 @@
 #include "miner.h"
 #include <thread>
 #include <vector>
-#include "sha1.h"
-
-#include <iostream>
+#include <stdlib.h>
 
 static bool difficulty_eq(sha1::hash const &hash, size_t d) {
     unsigned char const *buf = hash.data();
@@ -29,10 +27,8 @@ static bool difficulty_eq(sha1 const &sha, sha1::hash &hash, size_t const diffic
 
 constexpr size_t npos = size_t(-1);
 
-using nonce = sha1::buf<nonce_size>;
-
 // Nonce alphabet is [0-9a-zA-Z]
-static size_t nonce_inc(nonce &nonce, size_t const i=(nonce_size - 1)) {
+static size_t nonce_inc_impl(nonce &nonce, size_t const i) {
     if (nonce[i] == '9') {
         nonce[i] = 'a';
         return i;
@@ -47,7 +43,23 @@ static size_t nonce_inc(nonce &nonce, size_t const i=(nonce_size - 1)) {
     if (i == 0) {
         return npos;
     }
-    return nonce_inc(nonce, i - 1);
+    return nonce_inc_impl(nonce, i - 1);
+}
+
+size_t nonce_inc(nonce &nonce) {
+    return nonce_inc_impl(nonce, nonce_size - 1);
+}
+
+size_t nonce_rand(nonce &nonce) {
+    constexpr unsigned char alphabet[] = {
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    };
+    for (auto &c : nonce) {
+        c = alphabet[rand() % sizeof(alphabet)];
+    }
+    return nonce.size() - 1;
 }
 
 enum class MineWorkerResult {
@@ -56,9 +68,9 @@ enum class MineWorkerResult {
     FINISHED,
 };
 
-static MineWorkerResult mine_worker(sha1 const &prefix_sha, nonce &nonce, sha1::hash &hash, size_t const difficulty) {
+static MineWorkerResult mine_worker(sha1 const &prefix_sha, nonce &nonce, sha1::hash &hash, size_t const difficulty, size_t nonce_func(::nonce&)) {
     for (size_t i = 0; i < 9999999; ++i) {
-        size_t const changed_index = nonce_inc(nonce);
+        size_t const changed_index = nonce_func(nonce);
         if (changed_index == npos) {
             return MineWorkerResult::FINISHED;
         }
@@ -72,7 +84,7 @@ static MineWorkerResult mine_worker(sha1 const &prefix_sha, nonce &nonce, sha1::
     return MineWorkerResult::NOTFOUND;
 }
 
-MineResult mine(std::string const &prefix, size_t const difficulty, size_t const threads_count) {
+MineResult mine(std::string const &prefix, size_t const difficulty, size_t const threads_count, size_t nonce_func(nonce&)) {
     MineResult result;
     result.success = false;
 
@@ -108,10 +120,10 @@ MineResult mine(std::string const &prefix, size_t const difficulty, size_t const
     std::atomic<size_t> active_threads = threads_count;
 
     for (size_t i = 0; i < threads_count; ++i) {
-        threads.emplace_back(std::thread([&ctxs, i, &results, difficulty, &result_id, &active_threads, &thread_exit] {
+        threads.emplace_back(std::thread([&ctxs, i, &results, difficulty, &result_id, &active_threads, &thread_exit, &nonce_func] {
                                              MineWorkerResult r = MineWorkerResult::NOTFOUND;
                                              while(result_id == -1 && r == MineWorkerResult::NOTFOUND) {
-                                                 r = mine_worker(ctxs[i], results[i].nonce, results[i].hash, difficulty);
+                                                 r = mine_worker(ctxs[i], results[i].nonce, results[i].hash, difficulty, nonce_func);
                                              }
                                              if (r == MineWorkerResult::FOUND) {
                                                  result_id = i;

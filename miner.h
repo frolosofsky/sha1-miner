@@ -17,5 +17,10 @@ struct MineResult {
     }
 };
 
-MineResult mine(std::string const &prefix, size_t difficulty, size_t threads_count);
+using nonce = sha1::buf<nonce_size>;
+
+size_t nonce_inc(nonce &nonce);
+size_t nonce_rand(nonce &nonce);
+
+MineResult mine(std::string const &prefix, size_t difficulty, size_t threads_count, size_t nonce_func(nonce&));
 std::string hash2str(sha1::hash const &hash);
